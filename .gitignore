@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Database (recreated automatically when the backend runs)
+*.db
+*.sqlite3
+
+# Node / React
+node_modules/
+dist/
+build/
+
+# Secrets and local settings
+.env
+.env.local
+
+# Zips used for sharing files between teammates
+*.zip
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
