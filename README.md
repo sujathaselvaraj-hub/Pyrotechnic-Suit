@@ -4,7 +4,7 @@ A web app prototype of an IoT-enabled protective suit that monitors the air a py
 
 > **Status:** working prototype using simulated sensor data. It is a student project, not certified safety equipment.
 
-**Live dashboard:** `<add Vercel link>`  
+**Live dashboard:** `https://pyrotechnicsuit-9jh181m3c-datame2.vercel.app/`  
 
 ## Team
 
