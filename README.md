@@ -1,10 +1,21 @@
 # Pyro-Suit: IoT Safety Monitoring for Pyrotechnicians
 
-A web app prototype of an IoT-enabled protective suit that monitors the air a pyrotechnician breathes and warns them before exposure becomes dangerous.
+A web app prototype of an IoT-enabled protective suit that monitors the air a pyrotechnician breathes and warns them before exposure becomes dangerous. Sensors on the suit measure toxic gases and fine dust. A detector decides whether a reading is a real hazard or a false alarm, and a live dashboard shows the result to the wearer and a supervisor.
 
 > **Status:** working prototype using simulated sensor data. It is a student project, not certified safety equipment.
 
-**Live demo:** `<add Vercel link>`  |  **API:** `<add Render link>` (docs at `/docs`)
+**Live dashboard:** `<add Vercel link>`  
+
+## Team
+
+| Name | Contribution |
+|---|---|
+| Santhosh Prabhu | Frontend dashboard (React): suit view, live readings, trend graphs, alert timeline, event log, limits panel. CAD design |
+| Santhosh Perumal | Detection logic (`detector.py`, `thresholds.py` with OSHA/NIOSH sources, simulator and tests). Frontend. CAD design |
+| Sujatha S | Backend (FastAPI API and SQLite database), connecting the dashboard to the backend, repository setup and deployment |
+| Anisha T | Documentation (this README and the project write-up), testing and results |
+
+The repository was assembled and first pushed by Sujatha S on behalf of the team. Each member's own work is in the folders listed below, and individual commits are in the Git history.
 
 ## The problem
 
@@ -12,24 +23,48 @@ Pyrotechnicians work close to smoke, combustion gases and fine particles. Exposu
 
 ## What the prototype does
 
-- Shows simulated readings from two shoulder gas modules (CO, SO2, O2) and a rear dust module (PM2.5, PM10)
+- Shows simulated readings from two shoulder gas modules (CO, SO2, O2) and a rear dust module (PM2.5)
 - Classifies each reading as safe, caution or hazard against configurable limits
 - Confirms a hazard only after a **dwell time** and **two-sided corroboration**, so a single sensor glitch does not trigger an alarm
 - Escalates through four levels: SAFE, CAUTION, HAZARD (fan and vibration on) and CRITICAL (leave the area)
 - Detects a faulty sensor (frozen or out-of-range value) and ignores it until it recovers
 - Keeps the fan on briefly after the air clears, with a manual override
-- Includes demo scenarios, a live event log, trend graphs, an alert timeline, editable limits and built-in self-tests
+- Saves every reading and alert to a database, with a CSV export and an exposure summary
+- Includes demo scenarios, trend graphs, an alert timeline, editable limits and built-in self-tests
+
+## System overview
+
+```
+Simulated sensors (browser)
+        |  one snapshot per second
+        v
+FastAPI backend  -->  Detector  -->  SQLite database
+        |
+        v
+  Events, readings, summary, CSV export
+```
+
+The dashboard runs its own copy of the detection rules so it works even when the backend is off. The backend runs the same rules and records the results. Both use the same limits and timings, and a comparison on five scenarios gave identical alert levels and fan states.
 
 ## Repository structure
 
 ```
-pyro-suit/
-  frontend/   React dashboard (Vite). Runs on its own simulator today
-  backend/    FastAPI API, SQLite storage, and the Python detector
+Pyrotechnic-Suit/
+  frontend/   React dashboard (Vite)
+  backend/    FastAPI app, SQLite storage, detector, tests
   cad/        Suit and module CAD files, exported images
   README.md
   .gitignore
 ```
+
+| Backend file | What it does |
+|---|---|
+| `main.py` | FastAPI app: the URLs, input checking and CORS |
+| `service.py` | SQLite storage and the glue between the API and the detector |
+| `detector.py` | The detection rules (dwell time, corroboration, escalation, fan hold-off) |
+| `thresholds.py` | Alert limits, each with its source |
+| `simulate.py` | Console demo of the scenarios |
+| `test_detector.py`, `test_service.py` | Automated tests |
 
 ## Tech stack
 
@@ -37,53 +72,21 @@ pyro-suit/
 |---|---|
 | Frontend | React 18, Vite, Recharts, Framer Motion, Lucide icons |
 | Backend | Python, FastAPI, Uvicorn |
-| Database | SQLite |
+| Database | SQLite (Python's built-in `sqlite3`) |
 | Design | CAD (see `cad/`) |
 | Hosting | Vercel (frontend), Render (backend) |
-
-## Run it locally
-
-You need Python 3.10+ and Node.js 18+.
-
-**Frontend** (this alone is enough to see the full demo)
-
-```bash
-cd frontend
-npm install
-cp .env.example .env     # points the dashboard at the local backend; delete the line to run with no backend
-npm run dev
-```
-
-Open the address Vite prints (usually `http://localhost:5173`).
-
-**Backend**
-
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload
-```
-
-The API runs at `http://127.0.0.1:8000`. Open `http://127.0.0.1:8000/docs` to try every endpoint in the browser.
-
-**Detector tests and console demo**
-
-```bash
-cd backend
-pip install -r requirements-dev.txt
-python -m pytest        # detector and storage tests
-python simulate.py      # pick a scenario and watch the alert levels second by second
-```
 
 ## How detection works
 
 1. Each reading is compared with its caution and hazard limit. For oxygen, lower values are worse.
-2. A hazard reading must last for a **dwell time** before it counts. If both sides agree (or dust and a gas agree), it is confirmed quickly. If only one side reports it, the system waits longer.
+2. A hazard reading must last for a **dwell time** before it counts:
+   - **2 seconds** if both shoulders agree, or the dust sensor reports it
+   - **6 seconds** if only one shoulder reports it
 3. A brief spike never reaches the dwell time, so it is ignored.
-4. A hazard that keeps going escalates to CRITICAL.
-5. At HAZARD the fan and vibration motor start, and the fan stays on for a few seconds after the air clears.
+4. A hazard that keeps going for 7 more seconds after confirmation becomes **CRITICAL**.
+5. At HAZARD the fan and vibration motor start. The fan stays on for about 4 seconds after the air clears.
 
-The dwell times, escalation time and fan hold-off are team design choices and are set in one place in `backend/detector.py`.
+The timings are team design choices, set in one place in `backend/detector.py`.
 
 ## Alert limits
 
@@ -108,6 +111,41 @@ OSHA and NIOSH values are 8-hour averages. Using them as live alarm points is de
 | Sensor glitch | One false spike is filtered out |
 | Sensor fault | A frozen CO sensor is flagged and ignored |
 
+## Run it locally
+
+You need Python 3.10+ and Node.js 18+.
+
+**Backend**
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+If `uvicorn` is not recognised on Windows, use `python -m uvicorn main:app --reload`. The API runs at `http://127.0.0.1:8000`, and `http://127.0.0.1:8000/docs` lets you try every endpoint in the browser.
+
+**Frontend**
+
+```bash
+cd frontend
+npm install
+copy .env.example .env     (Mac/Linux: cp .env.example .env)
+npm run dev
+```
+
+Open the address Vite prints (usually `http://localhost:5173`). Delete the line in `.env` to run the dashboard with no backend.
+
+**Tests**
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+There are 13 automated backend tests, plus 7 self-tests that run inside the dashboard under "About and tests".
+
 ## API
 
 The dashboard sends one snapshot per second to `POST /tick`. The backend runs the detector, saves the reading and writes an event whenever the alert level or the fan changes.
@@ -129,31 +167,17 @@ Example `POST /tick` body:
  "o2_left": 20.9, "o2_right": 20.9, "pm25": 13}
 ```
 
-The frontend (`frontend/src/logic.js`) and the backend (`backend/detector.py`) use the same limits and timings, so they give the same alert level for the same readings. If you change one, change the other.
-
 ## Deployment
 
-- **Frontend:** Vercel. Root directory `frontend`, environment variable `VITE_API_URL` set to the backend URL.
-- **Backend:** Render. Root directory `backend`, build command `pip install -r requirements.txt`, start command `uvicorn main:app --host 0.0.0.0 --port $PORT`.
-- The free Render plan sleeps when idle and forgets the SQLite file when it restarts. The dashboard keeps working without the backend, but saved history is lost on a restart. Use `/export.csv` before a presentation.
+- **Backend on Render:** root directory `backend`, build command `pip install -r requirements.txt`, start command `uvicorn main:app --host 0.0.0.0 --port $PORT`.
+- **Frontend on Vercel:** root directory `frontend`, environment variable `VITE_API_URL` set to the Render URL (no trailing slash).
+- The free Render plan sleeps when idle and loses the SQLite file when it restarts. The dashboard keeps working without the backend, but saved history is lost on a restart, so download `/export.csv` after any run you need.
 
-## Current status and next steps
+## Limitations and future work
 
-- The dashboard runs on its built-in simulator and sends every second to the backend, which stores it. The dashboard's alert display is still calculated in the browser.
-- **Next:** make the dashboard show the alert level returned by the API instead of its own calculation.
-- Then: real hardware, such as an ESP32 with gas and dust sensors posting to `/tick`.
-- PM10 is currently a simulated value (1.8 times PM2.5). It is not measured or used for alerts.
-- Later: wearer login, several wearers on one dashboard, push alerts to a supervisor's phone, and a hosted database.
+- Sensor data is simulated. The next step is real hardware, such as an ESP32 with gas and dust sensors posting readings to `/tick`.
+- The dashboard still shows the alert it calculates itself. A next step is to show the alert returned by the API.
+- PM10 on the dashboard is a simulated value (1.8 times PM2.5). It is not measured or used for alerts.
+- Alert limits should be reviewed against current safety standards before any real-world use.
+- Later: wearer login, several wearers on one dashboard, push alerts to a supervisor's phone, and a hosted database for permanent storage.
 
-## Team
-
-| Name | Role |
-|---|---|
-| Prabhu | Frontend and CAD design |
-| Perumal | Frontend, detection logic and CAD design |
-| Sujatha | Backend, API and database |
-| Anisha | Testing and documentation |
-
-## License
-
-`<choose one, for example MIT, or remove this section>`
